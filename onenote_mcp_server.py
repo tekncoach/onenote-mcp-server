@@ -692,6 +692,123 @@ async def list_nested_section_groups(section_group_id: str) -> str:
         return f"Error listing nested section groups: {str(e)}"
 
 
+@mcp.tool()
+async def create_section_group(notebook_id: str, name: str) -> str:
+    """
+    Create a new section group in a notebook.
+
+    Args:
+        notebook_id: ID of the notebook to create the section group in
+        name: Name of the new section group (max 50 chars, no special chars: ?*\\/:<>|&#''%~)
+
+    Returns:
+        JSON string with the created section group information
+    """
+    try:
+        data = {"displayName": name}
+
+        group = await make_graph_request(
+            f"/me/onenote/notebooks/{notebook_id}/sectionGroups",
+            method="POST",
+            data=data
+        )
+
+        result = {
+            "status": "success",
+            "message": f"Section group '{name}' created successfully",
+            "sectionGroup": {
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+            }
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error creating section group: {str(e)}"
+
+
+@mcp.tool()
+async def create_section_in_group(section_group_id: str, name: str) -> str:
+    """
+    Create a new section within a section group.
+
+    Args:
+        section_group_id: ID of the section group to create the section in
+        name: Name of the new section
+
+    Returns:
+        JSON string with the created section information
+    """
+    try:
+        data = {"displayName": name}
+
+        section = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}/sections",
+            method="POST",
+            data=data
+        )
+
+        result = {
+            "status": "success",
+            "message": f"Section '{name}' created successfully in section group",
+            "section": {
+                "id": section.get("id"),
+                "name": section.get("displayName"),
+                "created": section.get("createdDateTime"),
+                "pagesUrl": section.get("pagesUrl"),
+            }
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error creating section in group: {str(e)}"
+
+
+@mcp.tool()
+async def create_nested_section_group(parent_section_group_id: str, name: str) -> str:
+    """
+    Create a nested section group within an existing section group.
+    OneNote supports hierarchical section groups (groups within groups).
+
+    Args:
+        parent_section_group_id: ID of the parent section group
+        name: Name of the new nested section group (max 50 chars)
+
+    Returns:
+        JSON string with the created nested section group information
+    """
+    try:
+        data = {"displayName": name}
+
+        group = await make_graph_request(
+            f"/me/onenote/sectionGroups/{parent_section_group_id}/sectionGroups",
+            method="POST",
+            data=data
+        )
+
+        result = {
+            "status": "success",
+            "message": f"Nested section group '{name}' created successfully",
+            "sectionGroup": {
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+            }
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error creating nested section group: {str(e)}"
+
+
 # =============================================================================
 # Page Tools
 # =============================================================================
