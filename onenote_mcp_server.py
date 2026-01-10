@@ -518,8 +518,14 @@ async def list_pages(section_id: str) -> str:
         JSON string containing page information with hierarchy (level, order)
     """
     try:
-        # Use $orderby=order to get pages in display order (as shown in OneNote UI)
-        pages = await make_graph_request(f"/me/onenote/sections/{section_id}/pages?$orderby=order")
+        # Explicitly request level and order properties with $select
+        # Order by 'order' to get pages in display order (as shown in OneNote UI)
+        endpoint = (
+            f"/me/onenote/sections/{section_id}/pages"
+            "?$select=id,title,createdDateTime,lastModifiedDateTime,contentUrl,level,order"
+            "&$orderby=order"
+        )
+        pages = await make_graph_request(endpoint)
 
         result = []
         for page in pages.get("value", []):
