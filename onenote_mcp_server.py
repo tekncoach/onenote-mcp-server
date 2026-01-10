@@ -441,11 +441,28 @@ async def list_notebooks() -> str:
         
         result = []
         for notebook in notebooks.get("value", []):
+            # Extract creator info
+            created_by = notebook.get("createdBy", {})
+            created_by_user = created_by.get("user", {})
+
+            # Extract modifier info
+            modified_by = notebook.get("lastModifiedBy", {})
+            modified_by_user = modified_by.get("user", {})
+
+            # Extract links
+            links = notebook.get("links", {})
+
             result.append({
                 "id": notebook.get("id"),
                 "name": notebook.get("displayName"),
                 "created": notebook.get("createdDateTime"),
-                "modified": notebook.get("lastModifiedDateTime")
+                "modified": notebook.get("lastModifiedDateTime"),
+                "isShared": notebook.get("isShared"),
+                "userRole": notebook.get("userRole"),
+                "isDefault": notebook.get("isDefault"),
+                "createdBy": created_by_user.get("displayName"),
+                "lastModifiedBy": modified_by_user.get("displayName"),
+                "webUrl": links.get("oneNoteWebUrl", {}).get("href") if links else None
             })
         
         logger.info(f"Returning {len(result)} notebooks")
