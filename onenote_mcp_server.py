@@ -1155,6 +1155,47 @@ async def delete_section(section_id: str) -> str:
         return f"Error deleting section: {str(e)}"
 
 
+# =============================================================================
+# Copy Tools
+# =============================================================================
+
+@mcp.tool()
+async def copy_page_to_section(page_id: str, target_section_id: str) -> str:
+    """
+    Copy a page to another section.
+    The original page remains in its current location.
+
+    Args:
+        page_id: ID of the page to copy
+        target_section_id: ID of the destination section
+
+    Returns:
+        JSON string with copy operation status
+    """
+    try:
+        data = {"id": target_section_id}
+
+        # Note: copyToSection is an async operation that returns an operation URL
+        result_data = await make_graph_request(
+            f"/me/onenote/pages/{page_id}/copyToSection",
+            method="POST",
+            data=data
+        )
+
+        result = {
+            "status": "success",
+            "message": "Page copy initiated successfully",
+            "page_id": page_id,
+            "target_section_id": target_section_id,
+            "operation": result_data
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error copying page: {str(e)}"
+
+
 def main():
     """Main entry point for the server."""
     # Log token caching configuration
