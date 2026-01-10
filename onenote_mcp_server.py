@@ -506,6 +506,196 @@ async def list_sections(notebook_id: str) -> str:
     except Exception as e:
         return f"Error listing sections: {str(e)}"
 
+# =============================================================================
+# Section Groups Tools
+# =============================================================================
+
+@mcp.tool()
+async def list_section_groups(notebook_id: str) -> str:
+    """
+    List all section groups in a specific notebook.
+
+    Args:
+        notebook_id: ID of the notebook to list section groups from
+
+    Returns:
+        JSON string containing section group information
+    """
+    try:
+        section_groups = await make_graph_request(
+            f"/me/onenote/notebooks/{notebook_id}/sectionGroups"
+        )
+
+        result = []
+        for group in section_groups.get("value", []):
+            # Extract creator info
+            created_by = group.get("createdBy", {})
+            created_by_user = created_by.get("user", {})
+
+            # Extract modifier info
+            modified_by = group.get("lastModifiedBy", {})
+            modified_by_user = modified_by.get("user", {})
+
+            result.append({
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "modified": group.get("lastModifiedDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+                "self": group.get("self"),
+                "createdBy": {
+                    "name": created_by_user.get("displayName"),
+                    "id": created_by_user.get("id"),
+                },
+                "lastModifiedBy": {
+                    "name": modified_by_user.get("displayName"),
+                    "id": modified_by_user.get("id"),
+                },
+            })
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error listing section groups: {str(e)}"
+
+
+@mcp.tool()
+async def get_section_group(section_group_id: str) -> str:
+    """
+    Get details of a specific section group.
+
+    Args:
+        section_group_id: ID of the section group to retrieve
+
+    Returns:
+        JSON string containing section group details
+    """
+    try:
+        group = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}"
+        )
+
+        # Extract creator info
+        created_by = group.get("createdBy", {})
+        created_by_user = created_by.get("user", {})
+
+        # Extract modifier info
+        modified_by = group.get("lastModifiedBy", {})
+        modified_by_user = modified_by.get("user", {})
+
+        result = {
+            "id": group.get("id"),
+            "name": group.get("displayName"),
+            "created": group.get("createdDateTime"),
+            "modified": group.get("lastModifiedDateTime"),
+            "sectionsUrl": group.get("sectionsUrl"),
+            "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+            "self": group.get("self"),
+            "createdBy": {
+                "name": created_by_user.get("displayName"),
+                "id": created_by_user.get("id"),
+            },
+            "lastModifiedBy": {
+                "name": modified_by_user.get("displayName"),
+                "id": modified_by_user.get("id"),
+            },
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error getting section group: {str(e)}"
+
+
+@mcp.tool()
+async def list_sections_in_group(section_group_id: str) -> str:
+    """
+    List all sections within a specific section group.
+
+    Args:
+        section_group_id: ID of the section group to list sections from
+
+    Returns:
+        JSON string containing section information
+    """
+    try:
+        sections = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}/sections"
+        )
+
+        result = []
+        for section in sections.get("value", []):
+            result.append({
+                "id": section.get("id"),
+                "name": section.get("displayName"),
+                "created": section.get("createdDateTime"),
+                "modified": section.get("lastModifiedDateTime"),
+                "isDefault": section.get("isDefault"),
+                "pagesUrl": section.get("pagesUrl"),
+            })
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error listing sections in group: {str(e)}"
+
+
+@mcp.tool()
+async def list_nested_section_groups(section_group_id: str) -> str:
+    """
+    List all nested section groups within a specific section group.
+    OneNote supports hierarchical section groups (groups within groups).
+
+    Args:
+        section_group_id: ID of the parent section group
+
+    Returns:
+        JSON string containing nested section group information
+    """
+    try:
+        section_groups = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}/sectionGroups"
+        )
+
+        result = []
+        for group in section_groups.get("value", []):
+            # Extract creator info
+            created_by = group.get("createdBy", {})
+            created_by_user = created_by.get("user", {})
+
+            # Extract modifier info
+            modified_by = group.get("lastModifiedBy", {})
+            modified_by_user = modified_by.get("user", {})
+
+            result.append({
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "modified": group.get("lastModifiedDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+                "self": group.get("self"),
+                "createdBy": {
+                    "name": created_by_user.get("displayName"),
+                    "id": created_by_user.get("id"),
+                },
+                "lastModifiedBy": {
+                    "name": modified_by_user.get("displayName"),
+                    "id": modified_by_user.get("id"),
+                },
+            })
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error listing nested section groups: {str(e)}"
+
+
+# =============================================================================
+# Page Tools
+# =============================================================================
+
 @mcp.tool()
 async def list_pages(section_id: str) -> str:
     """
