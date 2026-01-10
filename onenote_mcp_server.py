@@ -460,8 +460,14 @@ async def list_notebooks() -> str:
                 "isShared": notebook.get("isShared"),
                 "userRole": notebook.get("userRole"),
                 "isDefault": notebook.get("isDefault"),
-                "createdBy": created_by_user.get("displayName"),
-                "lastModifiedBy": modified_by_user.get("displayName"),
+                "createdBy": {
+                    "name": created_by_user.get("displayName"),
+                    "id": created_by_user.get("id"),
+                },
+                "lastModifiedBy": {
+                    "name": modified_by_user.get("displayName"),
+                    "id": modified_by_user.get("id"),
+                },
                 "webUrl": links.get("oneNoteWebUrl", {}).get("href") if links else None
             })
         
