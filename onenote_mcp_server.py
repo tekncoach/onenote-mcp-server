@@ -509,17 +509,18 @@ async def list_sections(notebook_id: str) -> str:
 @mcp.tool()
 async def list_pages(section_id: str) -> str:
     """
-    List pages in a specific section.
-    
+    List pages in a specific section, ordered by display position.
+
     Args:
         section_id: ID of the section to list pages from
-    
+
     Returns:
-        JSON string containing page information
+        JSON string containing page information with hierarchy (level, order)
     """
     try:
-        pages = await make_graph_request(f"/me/onenote/sections/{section_id}/pages")
-        
+        # Use $orderby=order to get pages in display order (as shown in OneNote UI)
+        pages = await make_graph_request(f"/me/onenote/sections/{section_id}/pages?$orderby=order")
+
         result = []
         for page in pages.get("value", []):
             result.append({
@@ -527,11 +528,13 @@ async def list_pages(section_id: str) -> str:
                 "title": page.get("title"),
                 "created": page.get("createdDateTime"),
                 "modified": page.get("lastModifiedDateTime"),
-                "content_url": page.get("contentUrl")
+                "content_url": page.get("contentUrl"),
+                "level": page.get("level", 0),  # 0 = top-level, 1+ = subpage
+                "order": page.get("order")  # Display order within section
             })
-        
+
         return json.dumps(result, indent=2)
-    
+
     except Exception as e:
         return f"Error listing pages: {str(e)}"
 
