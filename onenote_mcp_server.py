@@ -418,12 +418,18 @@ async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = No
             response = await client.post(url, headers=headers, json=data)
         elif method == "PATCH":
             response = await client.patch(url, headers=headers, json=data)
+        elif method == "DELETE":
+            response = await client.delete(url, headers=headers)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
-    
+
     if response.status_code >= 400:
         raise Exception(f"Graph API error: {response.status_code} - {response.text}")
-    
+
+    # DELETE returns 204 No Content
+    if method == "DELETE":
+        return {"status": "deleted"}
+
     return response.json()
 
 @mcp.tool()
@@ -1113,6 +1119,41 @@ async def update_page_content(page_id: str, content_html: str, target_element: s
     
     except Exception as e:
         return f"Error updating page content: {str(e)}"
+
+
+# =============================================================================
+# Delete Tools
+# =============================================================================
+
+@mcp.tool()
+async def delete_section(section_id: str) -> str:
+    """
+    Delete a section from OneNote.
+    WARNING: This action is irreversible. The section and all its pages will be permanently deleted.
+
+    Args:
+        section_id: ID of the section to delete
+
+    Returns:
+        JSON string with deletion status
+    """
+    try:
+        await make_graph_request(
+            f"/me/onenote/sections/{section_id}",
+            method="DELETE"
+        )
+
+        result = {
+            "status": "success",
+            "message": "Section deleted successfully",
+            "section_id": section_id
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error deleting section: {str(e)}"
+
 
 def main():
     """Main entry point for the server."""
