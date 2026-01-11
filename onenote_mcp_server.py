@@ -1259,6 +1259,9 @@ async def copy_page_to_section(page_id: str, target_section_id: str) -> str:
     Copy a page to another section.
     The original page remains in its current location.
 
+    WARNING: This operation may not work on personal Microsoft accounts (501 error).
+    It is designed for OneDrive for Business / SharePoint accounts.
+
     Args:
         page_id: ID of the page to copy
         target_section_id: ID of the destination section
