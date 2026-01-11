@@ -399,18 +399,26 @@ async def check_authentication() -> str:
             "token_caching": "unknown"
         }, indent=2)
 
-async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = None) -> Dict:
-    """Make a request to Microsoft Graph API."""
+async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = None, use_beta: bool = False) -> Dict:
+    """Make a request to Microsoft Graph API.
+
+    Args:
+        endpoint: API endpoint (e.g., "/me/onenote/notebooks")
+        method: HTTP method (GET, POST, PATCH, DELETE)
+        data: Request body for POST/PATCH
+        use_beta: Use /beta endpoint instead of /v1.0 (needed for some operations)
+    """
     # Ensure we have a valid token before making the request
     if not await ensure_valid_token():
         raise Exception("Not authenticated. Please call 'start_authentication' and 'complete_authentication' first.")
-    
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
-    
-    url = f"{GRAPH_BASE_URL}{endpoint}"
+
+    base_url = "https://graph.microsoft.com/beta" if use_beta else GRAPH_BASE_URL
+    url = f"{base_url}{endpoint}"
     
     async with httpx.AsyncClient() as client:
         if method == "GET":
@@ -1259,8 +1267,7 @@ async def copy_page_to_section(page_id: str, target_section_id: str) -> str:
     Copy a page to another section.
     The original page remains in its current location.
 
-    WARNING: This operation may not work on personal Microsoft accounts (501 error).
-    It is designed for OneDrive for Business / SharePoint accounts.
+    Note: Uses the /beta endpoint as /v1.0 returns 501 for this operation.
 
     Args:
         page_id: ID of the page to copy
@@ -1272,11 +1279,13 @@ async def copy_page_to_section(page_id: str, target_section_id: str) -> str:
     try:
         data = {"id": target_section_id}
 
-        # Note: copyToSection is an async operation that returns an operation URL
+        # Note: copyToSection requires /beta endpoint (/v1.0 returns 501)
+        # This is an async operation that returns an operation URL
         result_data = await make_graph_request(
             f"/me/onenote/pages/{page_id}/copyToSection",
             method="POST",
-            data=data
+            data=data,
+            use_beta=True
         )
 
         result = {
