@@ -29,6 +29,7 @@ GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 SCOPES = [
     "https://graph.microsoft.com/Notes.Read",
     "https://graph.microsoft.com/Notes.ReadWrite",
+    "https://graph.microsoft.com/Files.ReadWrite",
     "https://graph.microsoft.com/User.Read"
 ]
 
@@ -1156,6 +1157,96 @@ async def delete_page(page_id: str) -> str:
 
     except Exception as e:
         return f"Error deleting page: {str(e)}"
+
+
+def _strip_onenote_id_prefix(onenote_id: str) -> str:
+    """
+    Strip the '0-' prefix from OneNote IDs for use with OneDrive API.
+
+    OneNote IDs from Graph API have format: 0-D5F846AE8B2C1F44!s...
+    OneDrive API needs the format: D5F846AE8B2C1F44!s...
+    """
+    if onenote_id.startswith("0-"):
+        return onenote_id[2:]
+    return onenote_id
+
+
+@mcp.tool()
+async def delete_section(section_id: str) -> str:
+    """
+    Delete a section from OneNote via OneDrive API.
+    WARNING: This action is irreversible. The section and all its pages will be permanently deleted.
+
+    Note: Microsoft Graph OneNote API does not support section deletion directly.
+    This uses the OneDrive API workaround since OneNote sections are stored as .one files in OneDrive.
+    Requires Files.ReadWrite scope.
+
+    Args:
+        section_id: ID of the section to delete (OneNote ID format accepted)
+
+    Returns:
+        JSON string with deletion status
+    """
+    try:
+        # Convert OneNote ID to OneDrive ID (strip "0-" prefix)
+        drive_item_id = _strip_onenote_id_prefix(section_id)
+
+        # Use OneDrive API to delete the section (stored as a .one file)
+        await make_graph_request(
+            f"/me/drive/items/{drive_item_id}",
+            method="DELETE"
+        )
+
+        result = {
+            "status": "success",
+            "message": "Section deleted successfully via OneDrive API",
+            "section_id": section_id,
+            "note": "Section and all its pages have been permanently deleted"
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error deleting section: {str(e)}"
+
+
+@mcp.tool()
+async def delete_section_group(section_group_id: str) -> str:
+    """
+    Delete a section group from OneNote via OneDrive API.
+    WARNING: This action is irreversible. The section group and all its contents will be permanently deleted.
+
+    Note: Microsoft Graph OneNote API does not support section group deletion directly.
+    This uses the OneDrive API workaround since OneNote section groups are stored as folders in OneDrive.
+    Requires Files.ReadWrite scope.
+
+    Args:
+        section_group_id: ID of the section group to delete (OneNote ID format accepted)
+
+    Returns:
+        JSON string with deletion status
+    """
+    try:
+        # Convert OneNote ID to OneDrive ID (strip "0-" prefix)
+        drive_item_id = _strip_onenote_id_prefix(section_group_id)
+
+        # Use OneDrive API to delete the section group (stored as a folder)
+        await make_graph_request(
+            f"/me/drive/items/{drive_item_id}",
+            method="DELETE"
+        )
+
+        result = {
+            "status": "success",
+            "message": "Section group deleted successfully via OneDrive API",
+            "section_group_id": section_group_id,
+            "note": "Section group and all its contents have been permanently deleted"
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error deleting section group: {str(e)}"
 
 
 # =============================================================================
