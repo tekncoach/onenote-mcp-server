@@ -1126,33 +1126,36 @@ async def update_page_content(page_id: str, content_html: str, target_element: s
 # =============================================================================
 
 @mcp.tool()
-async def delete_section(section_id: str) -> str:
+async def delete_page(page_id: str) -> str:
     """
-    Delete a section from OneNote.
-    WARNING: This action is irreversible. The section and all its pages will be permanently deleted.
+    Delete a page from OneNote.
+    WARNING: This action is irreversible. The page will be permanently deleted.
+
+    Note: Only page deletion is supported by Microsoft Graph API.
+    Sections, section groups, and notebooks cannot be deleted via the API.
 
     Args:
-        section_id: ID of the section to delete
+        page_id: ID of the page to delete
 
     Returns:
         JSON string with deletion status
     """
     try:
         await make_graph_request(
-            f"/me/onenote/sections/{section_id}",
+            f"/me/onenote/pages/{page_id}",
             method="DELETE"
         )
 
         result = {
             "status": "success",
-            "message": "Section deleted successfully",
-            "section_id": section_id
+            "message": "Page deleted successfully",
+            "page_id": page_id
         }
 
         return json.dumps(result, indent=2)
 
     except Exception as e:
-        return f"Error deleting section: {str(e)}"
+        return f"Error deleting page: {str(e)}"
 
 
 # =============================================================================
