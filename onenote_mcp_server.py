@@ -842,10 +842,12 @@ async def list_pages(section_id: str) -> str:
     try:
         # Explicitly request level and order properties with $select
         # Order by 'order' to get pages in display order (as shown in OneNote UI)
+        # IMPORTANT: pagelevel=true is required to get actual level values (not all 0)
         endpoint = (
             f"/me/onenote/sections/{section_id}/pages"
             "?$select=id,title,createdDateTime,lastModifiedDateTime,contentUrl,level,order"
             "&$orderby=order"
+            "&pagelevel=true"
         )
         pages = await make_graph_request(endpoint)
 
