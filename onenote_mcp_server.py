@@ -399,14 +399,15 @@ async def check_authentication() -> str:
             "token_caching": "unknown"
         }, indent=2)
 
-async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = None, use_beta: bool = False) -> Dict:
-    """Make a request to Microsoft Graph API.
+async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = None, use_beta: bool = False, max_retries: int = 3) -> Dict:
+    """Make a request to Microsoft Graph API with retry logic.
 
     Args:
         endpoint: API endpoint (e.g., "/me/onenote/notebooks")
         method: HTTP method (GET, POST, PATCH, DELETE)
         data: Request body for POST/PATCH
         use_beta: Use /beta endpoint instead of /v1.0 (needed for some operations)
+        max_retries: Maximum number of retry attempts for transient errors
     """
     # Ensure we have a valid token before making the request
     if not await ensure_valid_token():
@@ -419,27 +420,61 @@ async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = No
 
     base_url = "https://graph.microsoft.com/beta" if use_beta else GRAPH_BASE_URL
     url = f"{base_url}{endpoint}"
-    
-    async with httpx.AsyncClient() as client:
-        if method == "GET":
-            response = await client.get(url, headers=headers)
-        elif method == "POST":
-            response = await client.post(url, headers=headers, json=data)
-        elif method == "PATCH":
-            response = await client.patch(url, headers=headers, json=data)
-        elif method == "DELETE":
-            response = await client.delete(url, headers=headers)
-        else:
-            raise ValueError(f"Unsupported HTTP method: {method}")
 
-    if response.status_code >= 400:
-        raise Exception(f"Graph API error: {response.status_code} - {response.text}")
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if method == "GET":
+                    response = await client.get(url, headers=headers)
+                elif method == "POST":
+                    response = await client.post(url, headers=headers, json=data)
+                elif method == "PATCH":
+                    response = await client.patch(url, headers=headers, json=data)
+                elif method == "DELETE":
+                    response = await client.delete(url, headers=headers)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
 
-    # DELETE returns 204 No Content
-    if method == "DELETE":
-        return {"status": "deleted"}
+            # Retry on 503 Service Unavailable or 429 Too Many Requests
+            if response.status_code in (503, 429, 502, 504):
+                retry_after = int(response.headers.get("Retry-After", 2 ** attempt))
+                logger.warning(f"Received {response.status_code}, retrying in {retry_after}s (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(retry_after)
+                continue
 
-    return response.json()
+            if response.status_code >= 400:
+                raise Exception(f"Graph API error: {response.status_code} - {response.text[:500]}")
+
+            # DELETE returns 204 No Content
+            if method == "DELETE":
+                return {"status": "deleted"}
+
+            return response.json()
+
+        except httpx.TimeoutException as e:
+            last_error = f"Request timeout after 30s (attempt {attempt + 1}/{max_retries})"
+            logger.warning(last_error)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+        except httpx.ConnectError as e:
+            last_error = f"Connection error: {str(e) or 'Unable to connect'} (attempt {attempt + 1}/{max_retries})"
+            logger.warning(last_error)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+        except httpx.HTTPStatusError as e:
+            last_error = f"HTTP error: {e.response.status_code} - {str(e)}"
+            raise Exception(last_error)
+        except Exception as e:
+            error_msg = str(e) if str(e) else type(e).__name__
+            last_error = f"Request failed: {error_msg}"
+            logger.error(f"Unexpected error in make_graph_request: {error_msg}")
+            raise Exception(last_error)
+
+    # All retries exhausted
+    raise Exception(last_error or "Request failed after all retries")
 
 @mcp.tool()
 async def list_notebooks() -> str:
@@ -872,29 +907,58 @@ async def list_pages(section_id: str) -> str:
 async def get_page_content(page_id: str) -> str:
     """
     Get the content of a specific page.
-    
+
     Args:
         page_id: ID of the page to retrieve content from
-    
+
     Returns:
         Page content as HTML or error message
     """
-    try:
-        # Get page content (returns HTML)
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {access_token}"}
-            response = await client.get(
-                f"{GRAPH_BASE_URL}/me/onenote/pages/{page_id}/content",
-                headers=headers
-            )
-            
-            if response.status_code >= 400:
-                return f"Error getting page content: {response.status_code} - {response.text}"
-            
-            return response.text
-    
-    except Exception as e:
-        return f"Error getting page content: {str(e)}"
+    # Ensure we have a valid token
+    if not await ensure_valid_token():
+        return "Error getting page content: Not authenticated. Please call 'start_authentication' first."
+
+    max_retries = 3
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                headers = {"Authorization": f"Bearer {access_token}"}
+                response = await client.get(
+                    f"{GRAPH_BASE_URL}/me/onenote/pages/{page_id}/content",
+                    headers=headers
+                )
+
+                # Retry on transient errors
+                if response.status_code in (503, 429, 502, 504):
+                    retry_after = int(response.headers.get("Retry-After", 2 ** attempt))
+                    logger.warning(f"get_page_content: {response.status_code}, retrying in {retry_after}s")
+                    await asyncio.sleep(retry_after)
+                    continue
+
+                if response.status_code >= 400:
+                    return f"Error getting page content: {response.status_code} - {response.text[:500]}"
+
+                return response.text
+
+        except httpx.TimeoutException:
+            last_error = f"Request timeout after 30s (attempt {attempt + 1}/{max_retries})"
+            logger.warning(f"get_page_content: {last_error}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+        except httpx.ConnectError as e:
+            last_error = f"Connection error: {str(e) or 'Unable to connect'}"
+            logger.warning(f"get_page_content: {last_error}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+        except Exception as e:
+            error_msg = str(e) if str(e) else type(e).__name__
+            return f"Error getting page content: {error_msg}"
+
+    return f"Error getting page content: {last_error or 'Failed after all retries'}"
 
 @mcp.tool()
 async def clear_token_cache() -> str:
