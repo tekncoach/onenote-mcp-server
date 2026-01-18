@@ -710,6 +710,24 @@ async def list_nested_section_groups(section_group_id: str) -> str:
 
         result = []
         for group in section_groups.get("value", []):
+            group_id = group.get("id")
+            display_name = group.get("displayName", "")
+
+            # Graph API list endpoint sometimes returns truncated displayName
+            # If name looks like just a number (e.g., "01", "02"), fetch full details
+            is_numeric = display_name and (
+                display_name.strip().isdigit() or
+                (len(display_name) <= 3 and display_name.replace(".", "").isdigit())
+            )
+            if is_numeric:
+                try:
+                    full_group = await make_graph_request(
+                        f"/me/onenote/sectionGroups/{group_id}"
+                    )
+                    display_name = full_group.get("displayName", display_name)
+                except Exception:
+                    pass  # Keep the truncated name if individual fetch fails
+
             # Extract creator info
             created_by = group.get("createdBy", {})
             created_by_user = created_by.get("user", {})
@@ -719,8 +737,8 @@ async def list_nested_section_groups(section_group_id: str) -> str:
             modified_by_user = modified_by.get("user", {})
 
             result.append({
-                "id": group.get("id"),
-                "name": group.get("displayName"),
+                "id": group_id,
+                "name": display_name,
                 "created": group.get("createdDateTime"),
                 "modified": group.get("lastModifiedDateTime"),
                 "sectionsUrl": group.get("sectionsUrl"),
