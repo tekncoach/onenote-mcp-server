@@ -29,6 +29,7 @@ GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 SCOPES = [
     "https://graph.microsoft.com/Notes.Read",
     "https://graph.microsoft.com/Notes.ReadWrite",
+    "https://graph.microsoft.com/Files.ReadWrite",
     "https://graph.microsoft.com/User.Read"
 ]
 
@@ -398,18 +399,26 @@ async def check_authentication() -> str:
             "token_caching": "unknown"
         }, indent=2)
 
-async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = None) -> Dict:
-    """Make a request to Microsoft Graph API."""
+async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = None, use_beta: bool = False) -> Dict:
+    """Make a request to Microsoft Graph API.
+
+    Args:
+        endpoint: API endpoint (e.g., "/me/onenote/notebooks")
+        method: HTTP method (GET, POST, PATCH, DELETE)
+        data: Request body for POST/PATCH
+        use_beta: Use /beta endpoint instead of /v1.0 (needed for some operations)
+    """
     # Ensure we have a valid token before making the request
     if not await ensure_valid_token():
         raise Exception("Not authenticated. Please call 'start_authentication' and 'complete_authentication' first.")
-    
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
-    
-    url = f"{GRAPH_BASE_URL}{endpoint}"
+
+    base_url = "https://graph.microsoft.com/beta" if use_beta else GRAPH_BASE_URL
+    url = f"{base_url}{endpoint}"
     
     async with httpx.AsyncClient() as client:
         if method == "GET":
@@ -418,12 +427,18 @@ async def make_graph_request(endpoint: str, method: str = "GET", data: Dict = No
             response = await client.post(url, headers=headers, json=data)
         elif method == "PATCH":
             response = await client.patch(url, headers=headers, json=data)
+        elif method == "DELETE":
+            response = await client.delete(url, headers=headers)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
-    
+
     if response.status_code >= 400:
         raise Exception(f"Graph API error: {response.status_code} - {response.text}")
-    
+
+    # DELETE returns 204 No Content
+    if method == "DELETE":
+        return {"status": "deleted"}
+
     return response.json()
 
 @mcp.tool()
@@ -505,6 +520,313 @@ async def list_sections(notebook_id: str) -> str:
     
     except Exception as e:
         return f"Error listing sections: {str(e)}"
+
+# =============================================================================
+# Section Groups Tools
+# =============================================================================
+
+@mcp.tool()
+async def list_section_groups(notebook_id: str) -> str:
+    """
+    List all section groups in a specific notebook.
+
+    Args:
+        notebook_id: ID of the notebook to list section groups from
+
+    Returns:
+        JSON string containing section group information
+    """
+    try:
+        section_groups = await make_graph_request(
+            f"/me/onenote/notebooks/{notebook_id}/sectionGroups"
+        )
+
+        result = []
+        for group in section_groups.get("value", []):
+            # Extract creator info
+            created_by = group.get("createdBy", {})
+            created_by_user = created_by.get("user", {})
+
+            # Extract modifier info
+            modified_by = group.get("lastModifiedBy", {})
+            modified_by_user = modified_by.get("user", {})
+
+            result.append({
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "modified": group.get("lastModifiedDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+                "self": group.get("self"),
+                "createdBy": {
+                    "name": created_by_user.get("displayName"),
+                    "id": created_by_user.get("id"),
+                },
+                "lastModifiedBy": {
+                    "name": modified_by_user.get("displayName"),
+                    "id": modified_by_user.get("id"),
+                },
+            })
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error listing section groups: {str(e)}"
+
+
+@mcp.tool()
+async def get_section_group(section_group_id: str) -> str:
+    """
+    Get details of a specific section group.
+
+    Args:
+        section_group_id: ID of the section group to retrieve
+
+    Returns:
+        JSON string containing section group details
+    """
+    try:
+        group = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}"
+        )
+
+        # Extract creator info
+        created_by = group.get("createdBy", {})
+        created_by_user = created_by.get("user", {})
+
+        # Extract modifier info
+        modified_by = group.get("lastModifiedBy", {})
+        modified_by_user = modified_by.get("user", {})
+
+        result = {
+            "id": group.get("id"),
+            "name": group.get("displayName"),
+            "created": group.get("createdDateTime"),
+            "modified": group.get("lastModifiedDateTime"),
+            "sectionsUrl": group.get("sectionsUrl"),
+            "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+            "self": group.get("self"),
+            "createdBy": {
+                "name": created_by_user.get("displayName"),
+                "id": created_by_user.get("id"),
+            },
+            "lastModifiedBy": {
+                "name": modified_by_user.get("displayName"),
+                "id": modified_by_user.get("id"),
+            },
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error getting section group: {str(e)}"
+
+
+@mcp.tool()
+async def list_sections_in_group(section_group_id: str) -> str:
+    """
+    List all sections within a specific section group.
+
+    Args:
+        section_group_id: ID of the section group to list sections from
+
+    Returns:
+        JSON string containing section information
+    """
+    try:
+        sections = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}/sections"
+        )
+
+        result = []
+        for section in sections.get("value", []):
+            result.append({
+                "id": section.get("id"),
+                "name": section.get("displayName"),
+                "created": section.get("createdDateTime"),
+                "modified": section.get("lastModifiedDateTime"),
+                "isDefault": section.get("isDefault"),
+                "pagesUrl": section.get("pagesUrl"),
+            })
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error listing sections in group: {str(e)}"
+
+
+@mcp.tool()
+async def list_nested_section_groups(section_group_id: str) -> str:
+    """
+    List all nested section groups within a specific section group.
+    OneNote supports hierarchical section groups (groups within groups).
+
+    Args:
+        section_group_id: ID of the parent section group
+
+    Returns:
+        JSON string containing nested section group information
+    """
+    try:
+        section_groups = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}/sectionGroups"
+        )
+
+        result = []
+        for group in section_groups.get("value", []):
+            # Extract creator info
+            created_by = group.get("createdBy", {})
+            created_by_user = created_by.get("user", {})
+
+            # Extract modifier info
+            modified_by = group.get("lastModifiedBy", {})
+            modified_by_user = modified_by.get("user", {})
+
+            result.append({
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "modified": group.get("lastModifiedDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+                "self": group.get("self"),
+                "createdBy": {
+                    "name": created_by_user.get("displayName"),
+                    "id": created_by_user.get("id"),
+                },
+                "lastModifiedBy": {
+                    "name": modified_by_user.get("displayName"),
+                    "id": modified_by_user.get("id"),
+                },
+            })
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error listing nested section groups: {str(e)}"
+
+
+@mcp.tool()
+async def create_section_group(notebook_id: str, name: str) -> str:
+    """
+    Create a new section group in a notebook.
+
+    Args:
+        notebook_id: ID of the notebook to create the section group in
+        name: Name of the new section group (max 50 chars, no special chars: ?*\\/:<>|&#''%~)
+
+    Returns:
+        JSON string with the created section group information
+    """
+    try:
+        data = {"displayName": name}
+
+        group = await make_graph_request(
+            f"/me/onenote/notebooks/{notebook_id}/sectionGroups",
+            method="POST",
+            data=data
+        )
+
+        result = {
+            "status": "success",
+            "message": f"Section group '{name}' created successfully",
+            "sectionGroup": {
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+            }
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error creating section group: {str(e)}"
+
+
+@mcp.tool()
+async def create_section_in_group(section_group_id: str, name: str) -> str:
+    """
+    Create a new section within a section group.
+
+    Args:
+        section_group_id: ID of the section group to create the section in
+        name: Name of the new section
+
+    Returns:
+        JSON string with the created section information
+    """
+    try:
+        data = {"displayName": name}
+
+        section = await make_graph_request(
+            f"/me/onenote/sectionGroups/{section_group_id}/sections",
+            method="POST",
+            data=data
+        )
+
+        result = {
+            "status": "success",
+            "message": f"Section '{name}' created successfully in section group",
+            "section": {
+                "id": section.get("id"),
+                "name": section.get("displayName"),
+                "created": section.get("createdDateTime"),
+                "pagesUrl": section.get("pagesUrl"),
+            }
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error creating section in group: {str(e)}"
+
+
+@mcp.tool()
+async def create_nested_section_group(parent_section_group_id: str, name: str) -> str:
+    """
+    Create a nested section group within an existing section group.
+    OneNote supports hierarchical section groups (groups within groups).
+
+    Args:
+        parent_section_group_id: ID of the parent section group
+        name: Name of the new nested section group (max 50 chars)
+
+    Returns:
+        JSON string with the created nested section group information
+    """
+    try:
+        data = {"displayName": name}
+
+        group = await make_graph_request(
+            f"/me/onenote/sectionGroups/{parent_section_group_id}/sectionGroups",
+            method="POST",
+            data=data
+        )
+
+        result = {
+            "status": "success",
+            "message": f"Nested section group '{name}' created successfully",
+            "sectionGroup": {
+                "id": group.get("id"),
+                "name": group.get("displayName"),
+                "created": group.get("createdDateTime"),
+                "sectionsUrl": group.get("sectionsUrl"),
+                "sectionGroupsUrl": group.get("sectionGroupsUrl"),
+            }
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error creating nested section group: {str(e)}"
+
+
+# =============================================================================
+# Page Tools
+# =============================================================================
 
 @mcp.tool()
 async def list_pages(section_id: str) -> str:
@@ -806,6 +1128,179 @@ async def update_page_content(page_id: str, content_html: str, target_element: s
     
     except Exception as e:
         return f"Error updating page content: {str(e)}"
+
+
+# =============================================================================
+# Delete Tools
+# =============================================================================
+
+@mcp.tool()
+async def delete_page(page_id: str) -> str:
+    """
+    Delete a page from OneNote.
+    WARNING: This action is irreversible. The page will be permanently deleted.
+
+    Note: Only page deletion is supported by Microsoft Graph API.
+    Sections, section groups, and notebooks cannot be deleted via the API.
+
+    Args:
+        page_id: ID of the page to delete
+
+    Returns:
+        JSON string with deletion status
+    """
+    try:
+        await make_graph_request(
+            f"/me/onenote/pages/{page_id}",
+            method="DELETE"
+        )
+
+        result = {
+            "status": "success",
+            "message": "Page deleted successfully",
+            "page_id": page_id
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error deleting page: {str(e)}"
+
+
+def _strip_onenote_id_prefix(onenote_id: str) -> str:
+    """
+    Strip the '0-' prefix from OneNote IDs for use with OneDrive API.
+
+    OneNote IDs from Graph API have format: 0-D5F846AE8B2C1F44!s...
+    OneDrive API needs the format: D5F846AE8B2C1F44!s...
+    """
+    if onenote_id.startswith("0-"):
+        return onenote_id[2:]
+    return onenote_id
+
+
+@mcp.tool()
+async def delete_section(section_id: str) -> str:
+    """
+    Delete a section from OneNote via OneDrive API.
+    WARNING: This action is irreversible. The section and all its pages will be permanently deleted.
+
+    Note: Microsoft Graph OneNote API does not support section deletion directly.
+    This uses the OneDrive API workaround since OneNote sections are stored as .one files in OneDrive.
+    Requires Files.ReadWrite scope.
+
+    Args:
+        section_id: ID of the section to delete (OneNote ID format accepted)
+
+    Returns:
+        JSON string with deletion status
+    """
+    try:
+        # Convert OneNote ID to OneDrive ID (strip "0-" prefix)
+        drive_item_id = _strip_onenote_id_prefix(section_id)
+
+        # Use OneDrive API to delete the section (stored as a .one file)
+        await make_graph_request(
+            f"/me/drive/items/{drive_item_id}",
+            method="DELETE"
+        )
+
+        result = {
+            "status": "success",
+            "message": "Section deleted successfully via OneDrive API",
+            "section_id": section_id,
+            "note": "Section and all its pages have been permanently deleted"
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error deleting section: {str(e)}"
+
+
+@mcp.tool()
+async def delete_section_group(section_group_id: str) -> str:
+    """
+    Delete a section group from OneNote via OneDrive API.
+    WARNING: This action is irreversible. The section group and all its contents will be permanently deleted.
+
+    Note: Microsoft Graph OneNote API does not support section group deletion directly.
+    This uses the OneDrive API workaround since OneNote section groups are stored as folders in OneDrive.
+    Requires Files.ReadWrite scope.
+
+    Args:
+        section_group_id: ID of the section group to delete (OneNote ID format accepted)
+
+    Returns:
+        JSON string with deletion status
+    """
+    try:
+        # Convert OneNote ID to OneDrive ID (strip "0-" prefix)
+        drive_item_id = _strip_onenote_id_prefix(section_group_id)
+
+        # Use OneDrive API to delete the section group (stored as a folder)
+        await make_graph_request(
+            f"/me/drive/items/{drive_item_id}",
+            method="DELETE"
+        )
+
+        result = {
+            "status": "success",
+            "message": "Section group deleted successfully via OneDrive API",
+            "section_group_id": section_group_id,
+            "note": "Section group and all its contents have been permanently deleted"
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error deleting section group: {str(e)}"
+
+
+# =============================================================================
+# Copy Tools
+# =============================================================================
+
+@mcp.tool()
+async def copy_page_to_section(page_id: str, target_section_id: str) -> str:
+    """
+    Copy a page to another section.
+    The original page remains in its current location.
+
+    Note: Uses the /beta endpoint as /v1.0 returns 501 for this operation.
+
+    Args:
+        page_id: ID of the page to copy
+        target_section_id: ID of the destination section
+
+    Returns:
+        JSON string with copy operation status
+    """
+    try:
+        data = {"id": target_section_id}
+
+        # Note: copyToSection requires /beta endpoint (/v1.0 returns 501)
+        # This is an async operation that returns an operation URL
+        result_data = await make_graph_request(
+            f"/me/onenote/pages/{page_id}/copyToSection",
+            method="POST",
+            data=data,
+            use_beta=True
+        )
+
+        result = {
+            "status": "success",
+            "message": "Page copy initiated successfully",
+            "page_id": page_id,
+            "target_section_id": target_section_id,
+            "operation": result_data
+        }
+
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        return f"Error copying page: {str(e)}"
+
 
 def main():
     """Main entry point for the server."""
